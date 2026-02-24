@@ -9,3 +9,15 @@ Currently under modification to use a smaller footprint TTGO device and also to 
 It is controlled by a Nintendo Wii controller.
 
 Modifications are required to enable OTA updates.
+
+The code is currently built using the Arduino interface and the following libraries arerequired:
+  ESP32MX1508 motor driver
+  Adafruit_PWMServoDriver.h
+  Bluepad32.h
+
+The first two libraries  are installed via the Arduino Library manager.
+
+For bluepad32 follow these instructions
+  https://github.com/ricardoquesada/bluepad32/blob/main/docs/plat_arduino.md
+
+  

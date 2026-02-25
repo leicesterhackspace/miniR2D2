@@ -1,0 +1,32 @@
+r2d2 pinout
+
+Currently
+i2C for servo driver uses default SDA GPIO21 SCL GPIO 22 (to change Wiew.begin(I2C_SDA, I2C_SCL)
+
+#define IN1 5 //Left Motor Driver IN1 5
+#define IN2 3 //Left Motor Driver IN2 3
+#define IN3 6 //Right Motor Driver IN1 6
+#define IN4 9 //Right Motor Driver IN2 9
+#define IN5 10 //Dome Motor Driver IN1    
+#define IN6 11 //Dome Motor Driver IN2   
+
+we need 8 pins
+for TTGO device
+pins available
+27
+25 22
+32 21
+TDI 27
+4 25
+
+2
+
+
+#define IN1 27 //Left Motor Driver IN1 5
+#define IN2 25 //Left Motor Driver IN2 3
+#define IN3 22 //Right Motor Driver IN1 6
+#define IN4 32 //Right Motor Driver IN2 9
+#define IN5 27 //Dome Motor Driver IN1    
+#define IN6 4 //Dome Motor Driver IN2   
+I2C_SDA   25
+I2C_SCL  2

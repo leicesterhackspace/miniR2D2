@@ -22,11 +22,11 @@ TDI 27
 2
 
 
-#define IN1 27 //Left Motor Driver IN1 5
-#define IN2 25 //Left Motor Driver IN2 3
-#define IN3 22 //Right Motor Driver IN1 6
-#define IN4 32 //Right Motor Driver IN2 9
-#define IN5 27 //Dome Motor Driver IN1    
-#define IN6 4 //Dome Motor Driver IN2   
-I2C_SDA   25
-I2C_SCL  2
+#define IN1 12 //Left Motor Driver IN1 5
+#define IN2 17 //Left Motor Driver IN2 3
+#define IN3 32 //Right Motor Driver IN1 6
+#define IN4 21 //Right Motor Driver IN2 9
+#define IN5 25 //Dome Motor Driver IN1    
+#define IN6 22 //Dome Motor Driver IN2   
+I2C_SDA   4
+I2C_SCL  16

@@ -24,6 +24,20 @@
  * Blue pad setup */
 #include <Bluepad32.h>
 
+/*
+ * wifi hotspot to enable ota
+ */
+#include <WiFi.h>
+#include "soc/soc.h"             // disable brownout problems
+#include "soc/rtc_cntl_reg.h"    // disable brownout problems
+#include "esp_http_server.h"
+
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+
+#include "web.h"
+
+ //
 GamepadPtr myGamepads[BP32_MAX_GAMEPADS]; 
 int oldDpad = 0;
 //Call boards for i2c
@@ -35,7 +49,7 @@ uint8_t servonum = 0;
 
 
 
-const int baudrate = 9600;
+const int baudrate = 115200;
 
 #define INPUT_SIZE 30
 
@@ -257,7 +271,15 @@ void onDisconnectedGamepad(GamepadPtr gp) {
 void setup() {
   Serial.begin(baudrate);                                                 //Used only for debugging on arduino serial monitor
   Serial.println("Mini Droid!");
+  WiFi.softAP("r2d2", "r2d2");
 
+  IPAddress IP = WiFi.softAPIP();
+  Serial.print("AP IP address: ");
+  Serial.println(IP);
+  Serial.print(" r2d2 Ready! Go to: http://");
+  Serial.println(WiFi.localIP());
+  startr2d2Server();
+  // Start streaming web server
   pwm1.begin();
   pwm1.setPWMFreq(50);  // standard for analog servos
 
@@ -316,7 +338,7 @@ void setup() {
 /*
  * bluepad setup
  */
-   Serial.begin(115200);
+   
   Serial.printf("Firmware: %s\n", BP32.firmwareVersion());
   const uint8_t *addr = BP32.localBdAddress();
   Serial.printf("BD Addr: %2X:%2X:%2X:%2X:%2X:%2X\n", addr[0], addr[1], addr[2],

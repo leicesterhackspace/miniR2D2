@@ -53,12 +53,12 @@ const int baudrate = 115200;
 
 #define INPUT_SIZE 30
 
-#define IN1 5 //Left Motor Driver IN1 5
-#define IN2 3 //Left Motor Driver IN2 3
-#define IN3 6 //Right Motor Driver IN1 6
-#define IN4 9 //Right Motor Driver IN2 9
-#define IN5 10 //Dome Motor Driver IN1    //uncomment if using dc motor for dome
-#define IN6 11 //Dome Motor Driver IN2    //uncomment if using dc motor for dome
+#define IN1 12 //Left Motor Driver IN1 5
+#define IN2 17  //Left Motor Driver IN2 3
+#define IN3 32 //Right Motor Driver IN1 6
+#define IN4 21 //Right Motor Driver IN2 9
+#define IN5 25 //Dome Motor Driver IN1    //uncomment if using dc motor for dome
+#define IN6 22 //Dome Motor Driver IN2    //uncomment if using dc motor for dome
 #define PWM_ch0 0
 #define PWM_ch1 1
 #define PWM_ch2 2
@@ -280,6 +280,10 @@ void setup() {
   Serial.println(WiFi.localIP());
   startr2d2Server();
   // Start streaming web server
+  // Initialize Wire with custom pins BEFORE pwm.begin()
+  //Wire.begin(CUSTOM_SDA, CUSTOM_SCL);
+  Wire.begin(4, 16);
+
   pwm1.begin();
   pwm1.setPWMFreq(50);  // standard for analog servos
 

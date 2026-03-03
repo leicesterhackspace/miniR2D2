@@ -30,3 +30,42 @@ TDI 27
 #define IN6 22 //Dome Motor Driver IN2   
 I2C_SDA   4
 I2C_SCL  16
+
+PWM servo allocations
+pwm1 - located in the body
+
+pwm1.setPWM(0, 0, frontarm1min); //front arm 1
+  pwm1.setPWM(1, 0, frontarm2min); //front arm 2
+  pwm1.setPWM(2, 0, 0); //
+  pwm1.setPWM(3, 0, liftup); //centre leg lift
+  pwm1.setPWM(4, 0, tiltmin);// Body Tilt
+  pwm1.setPWM(5, 0, 0);
+  pwm1.setPWM(6, 0, 0); //
+  pwm1.setPWM(7, 0, 0); //
+  pwm1.setPWM(8, 0, 0); //
+  pwm1.setPWM(9, 0, 0); //
+  pwm1.setPWM(10, 0, 0); //
+  pwm1.setPWM(11, 0, 0); //
+  pwm1.setPWM(12, 0, 0); //
+  pwm1.setPWM(13, 0, 0); //
+  pwm1.setPWM(14, 0, 0); //
+  pwm1.setPWM(15, 0, 300);  //dome rotation centred for servo motor
+
+pwm2 located in hea
+
+  pwm2.setPWM(0, 4096, 0); //Dome lights
+  pwm2.setPWM(1, 4096, 0); //Dome lights
+  pwm2.setPWM(2, 4096, 0); //Dome lights
+  pwm2.setPWM(3, 4096, 0); //Dome lights
+  pwm2.setPWM(4, 0, holoCentreVal); // Holo Servo 1
+  pwm2.setPWM(5, 0, holoCentreVal); // Holo Servo 2
+  pwm2.setPWM(6, 0, holoCentreVal); // Holo Servo 3
+  pwm2.setPWM(7, 4096, 0); // Dome lights
+  pwm2.setPWM(8, 0, 0); //
+  pwm2.setPWM(9, 0, 0); //
+  pwm2.setPWM(10, 0, peridown); //Periscope
+  pwm2.setPWM(11, 4096, 0); //Periscope LED
+  pwm2.setPWM(12, 0, 0); //
+  pwm2.setPWM(13, 4096, 0); // holo light 1
+  pwm2.setPWM(14, 4096, 0); // holo light 2
+  pwm2.setPWM(15, 4096, 0); // holo light 3

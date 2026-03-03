@@ -20,4 +20,5 @@ The first two libraries  are installed via the Arduino Library manager.
 For bluepad32 follow these instructions
   https://github.com/ricardoquesada/bluepad32/blob/main/docs/plat_arduino.md
 
+  Then make sure you select a board from the esp32+bluepad dropdown menu under boards manager
   

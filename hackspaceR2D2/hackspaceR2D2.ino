@@ -1,64 +1,31 @@
-/*
-  This code is intended on the Matt Zwarts 39% Mini Droid with 2 dc motors for the foot drives and servo drive for the dome and front arm(s)
-  Or 2 DC motors for the foot drives and a DC motor for the dome
-  Within the code the servo position minimum and maximum values will need to be set, the values are near the top of the code
-
-  Attach the motor driver to pins noted below
-  The servos are driven by a PCA9685 servo board which connects to the 5V, GND, and A4 and A5
-
-  Be sure to add the NeoSWSerial, MX1508 and Adafruit_PWMServoDriver libraries to your arduino libraries folders in Tools/ ManageLibraries
-
-  Run the Serial Monitor to ensure the app is connecting via bluetooth and the values are coming in correct before connecting to the droid
-
-  Happy Building, Matt Zwarts
-
-*//////////////////////////////////////////////////////////////////////////////////////
-
-#include <Wire.h>
-#include <math.h>
-
-#include <ESP32MX1508.h>   // motor driver for cheap Chinese tiny dual motor drivers, use PWM pins on arduino
-#include <Adafruit_PWMServoDriver.h>
-/*
- * 
- * Blue pad setup */
 #include <Bluepad32.h>
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
+#include <ESP32MX1508.h>
+// called this way, it uses the default address 0x40
 
-/*
- * wifi hotspot to enable ota
- */
-#include <WiFi.h>
-#include "soc/soc.h"             // disable brownout problems
-#include "soc/rtc_cntl_reg.h"    // disable brownout problems
-#include "esp_http_server.h"
-
-#include "esp_ota_ops.h"
-#include "esp_partition.h"
-
-#include "web.h"
-
- //
-GamepadPtr myGamepads[BP32_MAX_GAMEPADS]; 
-int oldDpad = 0;
-//Call boards for i2c
 Adafruit_PWMServoDriver pwm1 = Adafruit_PWMServoDriver(0x40);
 Adafruit_PWMServoDriver pwm2 = Adafruit_PWMServoDriver(0x41);
 
-// our servo # counter
-uint8_t servonum = 0;
 
+//
+// Depending on your servo make, the pulse width min and max may vary, you 
+// want these to be as small/large as possible without hitting the hard stop
+// for max range. You'll have to tweak them as necessary to match the servos you
+// have!
+#define SERVOMIN  150 // This is the 'minimum' pulse length count (out of 4096)
+#define SERVOMAX  600 // This is the 'maximum' pulse length count (out of 4096)
+#define USMIN  600 // This is the rounded 'minimum' microsecond length based on the minimum pulse of 150
+#define USMAX  2400 // This is the rounded 'maximum' microsecond length based on the maximum pulse of 600
+#define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
 
-
-const int baudrate = 115200;
-
-#define INPUT_SIZE 30
-
-#define IN1 12 //Left Motor Driver IN1 5
-#define IN2 17  //Left Motor Driver IN2 3
-#define IN3 32 //Right Motor Driver IN1 6
-#define IN4 21 //Right Motor Driver IN2 9
-#define IN5 25 //Dome Motor Driver IN1    //uncomment if using dc motor for dome
-#define IN6 22 //Dome Motor Driver IN2    //uncomment if using dc motor for dome
+// motor definitions for body
+#define IN1 19 //Left Motor Driver IN1 5
+#define IN2 18 //Left Motor Driver IN2 3
+#define IN3 16 //Right Motor Driver IN1 6
+#define IN4 17 //Right Motor Driver IN2 9
+#define IN5 12 //Dome Motor Driver IN1    //uncomment if using dc motor for dome
+#define IN6 13 //Dome Motor Driver IN2    //uncomment if using dc motor for dome
 #define PWM_ch0 0
 #define PWM_ch1 1
 #define PWM_ch2 2
@@ -66,12 +33,24 @@ const int baudrate = 115200;
 #define PWM_ch4 4
 #define PWM_ch5 5
 
+//Define the motor driver details on the MX1508
+#define RES 12  // 4095 rewsolution
+int pwmResolution =pow(2, RES) - 1;
 
-////////////////////Variables that can be changed to cusomise////////////////////////////////////////////////////////////////////////////////////////////
+MX1508 motorA(IN1, IN2, PWM_ch0, PWM_ch1, RES);
+MX1508 motorB(IN3, IN4, PWM_ch2, PWM_ch3, RES);
+MX1508 motorC(IN5, IN6, PWM_ch4, PWM_ch5, RES);
+#define joystickMax 350
 
-//NOTE: adjust the servos until they just move to correct positions to avoid them overheating by trying to drive to a position they can't achieve
-// Second note is that the values are in the range of 150 - 600 for the PCA9685 to write the correct position, this is the pulse length calculation, I've mapped it in the
-//code so no worries and just add the values below for servo ranges in degrees
+// numchukdefinitions
+#define numchukC 1
+#define numchukZ 2
+#define trigger 8
+
+GamepadPtr myGamepads[BP32_MAX_GAMEPADS];
+bool Connected = false;
+
+float elapsedTime, currentTime, timePrev, soundStartTime;
 
 // Variables to adust for front arm open and close limits for servo movement
 int frontarm1min = 30;
@@ -86,10 +65,21 @@ int tiltmax = 40;
 
 int liftup = 125;
 int liftdown = 28;
+// BODY variables
+int oldDpad = -1;
+int centreliftstate = 0;
+int liftPos = 0;
+int tiltState = 0;
+int tiltPos = 0;
+
+
+//DOME  variables
+int periscopestate =0;
+int periscopeposition = 0;
 
 // Variables to adust for periscope lift servo
-int periup = 25;
-int peridown = 135;
+int periup = 90;
+int peridown = 155;
 
 // Variables for dome servo
 int domeservomin = 30;
@@ -136,37 +126,8 @@ int periledonmax = 600;
 int periledoffmin = 300; //
 int periledoffmax = 600;
 
+int soundbutton = 0;
 
-
-// Deadzone value to reduce centre position error
-const int deadzonexy = 30; //original value is 30, this will give the motors enough power to move, add eliminate centering jitter
-const int domedeadzonexy = 40;  // dome centre original value is 40, this will give the motors enough power to move, add eliminate centering jitter
-
-// Upright 2 legged drive speed multiplier, when in 2 leg mode the drive speed is reduced by multplying it by this factor
-float uprightdrivespeed = 0.30;
-
-// Dome speed is slowed down on the dome motor rotation by this multiplying value
-float dome_speed = 0.60;                                     // dome rotation speed multiplier, increase or decrease value to speed up dome or slow down
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-//Define the motor driver details on the MX1508
-MX1508 motorA(IN1, IN2, PWM_ch0, PWM_ch1);
-MX1508 motorB(IN3, IN4, PWM_ch2, PWM_ch3);
-MX1508 motorC(IN5, IN6, PWM_ch4, PWM_ch5); //dome motor uncomment if using dc motor for dome
-
-boolean newData = false;  // check for data received
-
-int x1 = 0;                     // value from joystick
-int yy1 = 0;                     // value from joystick
-int x2 = 0;                     // value from joystick
-int y2 = 0;                     // value from joystick
-int soundbutton = 0;           //value for the sound player, can be used to trigger lights
-int lift = 0;
-int tilt = 0;
-int periscope = 0;
-
-int ledPin = 13;           // pin for the LED in the dome to be turned on and off
 int ledinterval = 200;    // delay to blink the LED lights in the dome
 int ledinterval1 = 200;
 int ledinterval2 = 200;
@@ -178,22 +139,6 @@ int ledState2 = LOW;
 int ledState3 = LOW;
 int ledState4 = LOW;
 
-float output1 = 0;              // Output from first channel
-float output2 = 0;              // Output from second channel
-float output3 = 0;              // Output for Dome motor
-float output4 = 0;              // Front arm servo
-float diff;                       // value for differential steering
-
-int centrelift;
-int legtilt;
-int periposition;
-
-float rawLeft;
-float rawRight;
-
-float elapsedTime, curtime, timePrev;
-
-boolean debug = true;
 
 static unsigned long lastMilli = 0;
 unsigned long currentMillis; // time current
@@ -217,13 +162,6 @@ unsigned long lastDebounceTime = 0;  // place holder for debounce time
 unsigned long debounceDelay = 100;    // the debounce time; increase if the output flickers
 
 
-//LED states
-long led1_state = 0;
-
-long loop_timer;
-/*
- * bluepad functions for callbacks
- */
 // This callback gets called any time a new gamepad is connected.
 // Up to 4 gamepads can be connected at the same time.
 void onConnectedGamepad(GamepadPtr gp) {
@@ -266,34 +204,49 @@ void onDisconnectedGamepad(GamepadPtr gp) {
   }
 }
 
- 
-/////////////////////////////////// SETUP ////////////////////////////////////////////////////
+// Arduino setup function. Runs in CPU 1
 void setup() {
-  Serial.begin(baudrate);                                                 //Used only for debugging on arduino serial monitor
-  Serial.println("Mini Droid!");
-  WiFi.softAP("r2d2", "r2d2");
+  Serial.begin(115200);
+  Serial.printf("Firmware: %s\n", BP32.firmwareVersion());
+  const uint8_t *addr = BP32.localBdAddress();
+  Serial.printf("BD Addr: %2X:%2X:%2X:%2X:%2X:%2X\n", addr[0], addr[1], addr[2],
+                addr[3], addr[4], addr[5]);
 
-  IPAddress IP = WiFi.softAPIP();
-  Serial.print("AP IP address: ");
-  Serial.println(IP);
-  Serial.print(" r2d2 Ready! Go to: http://");
-  Serial.println(WiFi.localIP());
-  startr2d2Server();
-  // Start streaming web server
-  // Initialize Wire with custom pins BEFORE pwm.begin()
-  //Wire.begin(CUSTOM_SDA, CUSTOM_SCL);
-  Wire.begin(4, 16);
+  // Setup the Bluepad32 callbacks
+  BP32.setup(&onConnectedGamepad, &onDisconnectedGamepad);
 
+  // "forgetBluetoothKeys()" should be called when the user performs
+  // a "device factory reset", or similar.
+  // Calling "forgetBluetoothKeys" in setup() just as an example.
+  // Forgetting Bluetooth keys prevents "paired" gamepads to reconnect.
+  // But might also fix some connection / re-connection issues.
+  BP32.forgetBluetoothKeys();
+ 
+
+ 
+  /*
+   * In theory the internal oscillator (clock) is 25MHz but it really isn't
+   * that precise. You can 'calibrate' this by tweaking this number until
+   * you get the PWM update frequency you're expecting!
+   * The int.osc. for the PCA9685 chip is a range between about 23-27MHz and
+   * is used for calculating things like writeMicroseconds()
+   * Analog servos run at ~50 Hz updates, It is importaint to use an
+   * oscilloscope in setting the int.osc frequency for the I2C PCA9685 chip.
+   * 1) Attach the oscilloscope to one of the PWM signal pins and ground on
+   *    the I2C PCA9685 chip you are setting the value for.
+   * 2) Adjust setOscillatorFrequency() until the PWM update frequency is the
+   *    expected value (50Hz for most ESCs)
+   * Setting the value here is specific to each individual I2C PCA9685 chip and
+   * affects the calculations for the PWM update frequency. 
+   * Failure to correctly set the int.osc value will cause unexpected PWM results
+   */
   pwm1.begin();
-  pwm1.setPWMFreq(50);  // standard for analog servos
-
+  pwm1.setPWMFreq(50);  // Analog servos run at ~50 Hz updates  
   pwm2.begin();
   pwm2.setPWMFreq(50);  // standard for analog servos
 
-
-  curtime = millis();                                                     //Start counting time in milliseconds
-
-  // Convert values from degrees to Pulse ranges for the servo positions to the PCA9685 board 0-180 to 150-600
+  
+// Convert values from degrees to Pulse ranges for the servo positions to the PCA9685 board 0-180 to 150-600
   frontarm1min = (((450 / 180) * frontarm1min) + 150);
   frontarm1max = (((450 / 180) * frontarm1max) + 150);
   frontarm2min = (((450 / 180) * frontarm2min) + 150);
@@ -309,101 +262,24 @@ void setup() {
   domeservocentre = (((450 / 180) * domeservocentre) + 150);
 
   //Set the servos to their start positions
-  servoSetup(); // view function and end of code
-  servoSetup2(); // view function and end of code
 
-  //output pins for motor drivers
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(IN3, OUTPUT);
-  pinMode(IN4, OUTPUT);
-  pinMode(IN5, OUTPUT);                           //uncomment if using dc motor for dome
-  pinMode(IN6, OUTPUT);                           //uncomment if using dc motor for dome
+  servoSetup(); // view function and end of code  
+  servoSetup2(); // view function and end of code  
 
-  // Write the motor pins low so they dont start on power up
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, LOW);
-  digitalWrite(IN5, LOW);                          //uncomment if using dc motor for dome
-  digitalWrite(IN6, LOW);                          //uncomment if using dc motor for dome
-
-  pinMode(ledPin, OUTPUT);
-
-  loop_timer = millis();                                               //Reset the loop timer
-
-  output1 = 0;
-  output2 = 0;
-  output3 = 0;                                      //uncomment if using dc motor for dome
-  //output3 = 300;                                      //uncomment if using servo for dome
-  motorA.motorGo(output1);
-  motorB.motorGo(output2);
-  motorC.motorGo(output3);                          //uncomment if using dc motor for dome
-/*
- * bluepad setup
- */
-   
-  Serial.printf("Firmware: %s\n", BP32.firmwareVersion());
-  const uint8_t *addr = BP32.localBdAddress();
-  Serial.printf("BD Addr: %2X:%2X:%2X:%2X:%2X:%2X\n", addr[0], addr[1], addr[2],
-                addr[3], addr[4], addr[5]);
-
-  // Setup the Bluepad32 callbacks
-  BP32.setup(&onConnectedGamepad, &onDisconnectedGamepad);
-
-  // "forgetBluetoothKeys()" should be called when the user performs
-  // a "device factory reset", or similar.
-  // Calling "forgetBluetoothKeys" in setup() just as an example.
-  // Forgetting Bluetooth keys prevents "paired" gamepads to reconnect.
-  // But might also fix some connection / re-connection issues.
-  BP32.forgetBluetoothKeys();
-  delay(1000);
+ 
 }
 
-// start of loop ///////////////////////////////////////////////////////////////////////
-void r2d2_loop() {
+///////////////////////////////////////////////////////////////////////////////////
 
-  currentMillis = millis();
-  timePrev = curtime;                                                      // the previous time is stored before the actual time read
-  curtime = millis();                                                      // actual time read
-  elapsedTime = (curtime - timePrev);                                      //elapsedTime = (time - timePrev) / 1000;
-  lastDebounceTime = millis();
+//////////////////////////////////////////////////////////////////////////////////////////
 
-  // called functionsbluetooth_data();
-  text();                                                              // check the motor outputs are correct, connect the usb to the arduino, open the serial monitor in arduino, and connect the phone app
-  motordrivers();                                                      // motor drivers function
-  //domeservo();                                                       // Dome motor drive
-  dome();                                                              // Dome motor drive
-  frontarm1();                                                         // front arm 1 motion
-  frontarm2();                                                         // front arm 2 motion
-  LED1();                                                           //Flicker dome lights when sounds are played
-  LED2();
-  LED3();
-  LED4();
-  LED5();
-  holoLED1();                                                       // holo lights
-  holoLED2();
-  holoLED3();
-  holoServo1();                                                       // randome holo servo timing
-  holoServo2();
-  holoServo3();
-
-  if (millis() - lastDebounceTime > debounceDelay) {
-    lastDebounceTime = currentMillis;
-    liftmechanism();
-    tiltmechanism();
-    periscopemotion();                                                   //periscope motion
-  }
-
-  lastMilli = millis();
-}
-//end of r2d2loop ///////////////////////////////////////////////////////////////////////////////////////////
-/*
- * bluepad loop
- */
-void bluepad_loop() { //1
+// Arduino loop function. Runs in CPU 1
+void loop() {
   
   int newDpad;
+  int buttonPressed;
+  int armDemand;
+  
   // This call fetches all the gamepad info from the NINA (ESP32) module.
   // Just call this function in your main loop.
   // The gamepads pointer (the ones received in the callbacks) gets updated
@@ -412,509 +288,106 @@ void bluepad_loop() { //1
 
   // It is safe to always do this before using the gamepad API.
   // This guarantees that the gamepad is valid and connected.
-  for (int i = 0; i < BP32_MAX_GAMEPADS; i++) { //2
-    
+  for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+    pwm1.setPWM(14, 4096, 0); // led on
+    pwm1.setPWM(15, 0, 4096);
     GamepadPtr myGamepad = myGamepads[i];
-    if (myGamepad && myGamepad->isConnected()) { //3
+    if (myGamepad && myGamepad->isConnected()) {
       // Another way to query the buttons, is by calling buttons(), or
       // miscButtons() which return a bitmask.
       // Some gamepads also have DPAD, axis and more.
+      // ought to check that is a wii controller
+      pwm1.setPWM(15, 4096, 0); // led on
+      pwm1.setPWM(14, 0, 4096);
+      currentMillis = millis();
+      timePrev = currentTime;                                                      // the previous time is stored before the actual time read
+      currentTime = millis();                                                      // actual time read
+      elapsedTime = (currentTime - timePrev);                                      //elapsedTime = (time - timePrev) / 1000;
+      lastDebounceTime = millis();
+      
       newDpad = myGamepad->dpad();
-      if (newDpad != oldDpad){ //4
-        // button pressed
-        switch ( newDpad){ //5
+      if (oldDpad != newDpad){
+        oldDpad = newDpad;
+        switch(newDpad){
           case 1:
-              lift =!lift;
-              break;
-         case 4:
-              periscope = !periscope;
-              break;
-         case 2:
-              tilt = !tilt;
-              break;
-         case 8:
-              soundbutton = !soundbutton;
+               centreliftstate = !centreliftstate;
+               liftPos = centreliftstate==0? liftup : liftdown;
+               pwm1.setPWM(3, 0, liftPos) ; // will need to check centrelift position
                break;
-         default:
-              break;
-              
-        } //5 switch
-      } //4 dpad change
+          case 2:
+               if (centreliftstate == 1){ // centre lift must be down before tilting
+                tiltState = !tiltState;
+                tiltPos = tiltState==0? tiltmin : tiltmax;
+                pwm1.setPWM(4, 0, tiltPos) ; 
+               }
+               break;
+         case 4: // periscope left?
+               updatePeriscopePosition();
+               
+               break;
+        }
+ 
 
-        /*Serial.printf(
-          "idx=%d, dpad: 0x%02x, buttons: 0x%04x, axis L: %4d, %4d, axis R: "
-          "%4d, %4d, brake: %4d, throttle: %4d, misc: 0x%02x, gyro x:%6d y:%6d "
-          "z:%6d, accel x:%6d y:%6d z:%6d\n",
-          i,                        // Gamepad Index
-          oldDpad,        // DPAD
-          myGamepad->buttons(),     // bitmask of pressed buttons
-          myGamepad->axisX(),       // (-511 - 512) left X Axis
-          myGamepad->axisY(),       // (-511 - 512) left Y axis
-          myGamepad->axisRX(),      // (-511 - 512) right X axis
-          myGamepad->axisRY(),      // (-511 - 512) right Y axis
-          myGamepad->brake(),       // (0 - 1023): brake button
-          myGamepad->throttle(),    // (0 - 1023): throttle (AKA gas) button
-          myGamepad->miscButtons(), // bitmak of pressed "misc" buttons
-          myGamepad->gyroX(),       // Gyro X
-          myGamepad->gyroY(),       // Gyro Y
-          myGamepad->gyroZ(),       // Gyro Z
-          myGamepad->accelX(),      // Accelerometer X
-          myGamepad->accelY(),      // Accelerometer Y
-          myGamepad->accelZ()       // Accelerometer Z
-        );*/
-        Serial.printf("idx=%d, dpad: 0x%02x, buttons: 0x%04x, misc: 0x%02x, a: 0x%02x, b: 0x%02x, x:0x%02x\n",
-          i,                        // Gamepad Index
-          newDpad,        // DPAD
-          myGamepad->buttons(),     // bitmask of pressed buttons
-          myGamepad->a(),
-          myGamepad->b(),
-          myGamepad->x()
-          );
+      }; // end of dpad changed
+     // motor control
+     buttonPressed = myGamepad->buttons() ;
+    
+     switch( buttonPressed & 0xb){
+      case numchukZ:
+         dome(myGamepad->axisX());
+         motorA.motorStop();
+         motorB.motorStop();
+         break;
 
-    } //3 end of connected game pad
-  }//2 gampad loop
+      case numchukC:
+        frontArm(myGamepad->axisY());
+        motorA.motorStop();
+        motorB.motorStop();
+        motorC.motorStop();
+        break;
+      case trigger:
+        if ( soundbutton == 0){
+          soundbutton = 1; // only set here and re-set out of loop
+          soundStartTime = currentTime;
+        
+        }
+        break;
+      default:
+        motordrivers(myGamepad->axisX(), myGamepad->axisY());
+        motorC.motorStop();
+        break;
+     }
+     
+      // soundbutton will be reset when sound ahs finished
+      if ( soundbutton ==1 && ((currentTime - soundStartTime )) > 5000.0){
+        soundbutton = 0;
+      }
+      LED1();
+      LED2();
+      LED3();
+      LED4();
+      LED5();
+      holoLED1();                                                       // holo lights
+      holoLED2();
+      holoLED3();
+      holoServo1();                                                       // randome holo servo timing
+      holoServo2();
+      holoServo3();
+      blinkPeriscopeLed();
 
-} //2 end of bluepad loop
+    }; // end of id connected
+      // You can query the axis and other properties as well. See Gamepad.h
+      // For all the available functions.
+    } // end of for each game pad loop
+ 
 
-void loop(){
+  // The main loop must have some kind of "yield to lower priority task" event.
+  // Otherwise the watchdog will get triggered.
+  // If your main loop doesn't have one, just add a simple `vTaskDelay(1)`.
+  // Detailed info here:
+  // https://stackoverflow.com/questions/66278271/task-watchdog-got-triggered-the-tasks-did-not-reset-the-watchdog-in-time
+
+  //vTaskDelay(1);
+  delay(10);
   
-  bluepad_loop() ;
-  r2d2_loop();
-  vTaskDelay(1);
-}
-
-///////////////////////////////////////////////////////////////////////////////////
-
-void motordrivers() {     // for the main drive wheels
-
-  //////////////////////////read in the values from bluetooth///////////////////
-  output1 = yy1;
-  output1 = map(output1, 0, 200, 255, -255);
-
-  output2 = x1;
-  output2 = map(output2, 0, 200, -255, 255); // swap the -255 and 255 if the left and rigth turn the wrong way
-
-  rawLeft = output2 + output1;
-  rawRight = output2 - output1;
-
-  diff = abs(abs(output2) - abs(output1));
-  rawLeft = rawLeft < 0 ? rawLeft - diff : rawLeft + diff;
-  rawRight = rawRight < 0 ? rawRight - diff : rawRight + diff;
-
-  rawLeft = constrain(rawLeft, -255, 255); // constrain the PWM to max 255
-  rawRight = constrain(rawRight, -255, 255);
-  motorA.motorGo(rawLeft);
-  motorB.motorGo(rawRight);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
-
-//uncomment out if using a dc motor for the dome
-
-void dome() {
-
-  output3 = x2;
-  output3 = map(output3, 0, 200, 255, -255);  // swap the -255 and 255 if the dome spins the wrong way
-  output3 = output3 * dome_speed;
-  if (output3 > domedeadzonexy || output3 < -domedeadzonexy) {
-    output3 = constrain(output3, -255, 255); // constrain the PWM to max -255 to 255
-  }
-  else {
-    output3 = 0;
-  }
-  motorC.motorGo(output3);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
-
-//Uncomment if using a servo motor for the dome rotation
-
-
-void domeservo() {
-
-  output3 = x2;
-  output3 = constrain(output3, 0, 200);
-  output3 = map(output3, 0, 200, domeservomin, domeservomax);
-
-  if (output3 < domeservomax || output4 > domeservomin) {
-    output3 = constrain(output3, domeservomin, domeservomax);
-    pwm1.setPWM(15, 0, output3);
-  }
-  else {
-    pwm1.setPWM(15, 0, domeservocentre);
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
-
-void frontarm1() {
-
-  output4 = y2;
-  output4 = constrain(output4, 110, 200);
-  output4 = map(output4, 110, 200, frontarm1min, frontarm1max);
-
-  /////////////////////
-  if (output4 < frontarm1max || output4 > frontarm1min) {
-    output4 = constrain(output4, frontarm1min, frontarm1max);
-    pwm1.setPWM(0, 0, output4);
-  }
-  else {
-    pwm1.setPWM(0, 0, frontarm1min);
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
-
-void frontarm2() {
-
-  output4 = y2;
-  output4 = constrain(output4, 0, 90);
-  output4 = map(output4, 0, 90, frontarm2max, frontarm2min);
-
-  /////////////////////
-  if (output4 < frontarm1max || output4 > frontarm1min) {
-    output4 = constrain(output4, frontarm2min, frontarm2max);
-    pwm1.setPWM(1, 0, output4);
-  }
-  else {
-    pwm1.setPWM(1, 0, frontarm2min);
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
-
-void liftmechanism() {
-
-  centrelift = lift;
-
-  if (centrelift == 0) {
-    pwm1.setPWM(3, 0, liftup);
-  }
-  else if (centrelift == 1) {
-    pwm1.setPWM(3, 0, liftdown);;
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
-
-void tiltmechanism() {
-
-  legtilt = tilt;
-
-  if (centrelift == 1) { // check the leg is down before tilting the body
-    if (legtilt == 0) {
-      pwm1.setPWM(4, 0, tiltmin);
-    }
-    else if (legtilt == 1) {
-      pwm1.setPWM(4, 0, tiltmax);
-    }
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
-
-void periscopemotion() {
-
-  periposition = periscope;
-
-  if (periposition == 0) {
-    pwm2.setPWM(10, 0, peridown); // periscope down
-  }
-  else if (periposition == 1) {
-    pwm2.setPWM(10, 0, periup);
-  }
-
-  if (periscope == 1) { // blink the periscope LED
-    if (currentMillis - previousMillis12 >= periledinterval) {
-      previousMillis12 = currentMillis;
-      if (periledState == LOW) {
-        periledState = HIGH;
-        periledinterval = random(periledonmin, periledonmax);       //set a random time dealy
-        pwm2.setPWM(11, 0, 4096);
-      }
-      else {
-        periledState = LOW;
-        periledinterval = random(periledoffmin, periledoffmax);       //set a random time dealy
-        pwm2.setPWM(11, 4096, 0);
-      }
-    }
-  }
-  else if (periscope == 0) {
-    pwm2.setPWM(11, 0, 4096); // turn off the led in the periscope
-  }
-
-}
-
-
-////////////////////////////////////////////////////////////////////////////////////////
-
-void LED1() {         // function to flash the dome lights when a sound is being played
-
-  if (soundbutton != 0) {
-    if (currentMillis - previousMillis7 >= ledinterval) {
-      previousMillis7 = currentMillis;
-      if (ledState == LOW) {
-        ledState = HIGH;
-        ledinterval = random(ledonmin, ledonmax);       //set a random time dealy when the sound is being played
-        pwm2.setPWM(0, 4096, 0);
-      }
-      else {
-        ledState = LOW;
-        ledinterval = random(ledoffmin, ledoffmax);       //set a random time dealy when the sound is being played
-        pwm2.setPWM(0, 0, 4096);
-      }
-
-    }
-    else {
-      pwm2.setPWM(0, 4096, 0);
-    }
-  }
-}
-
-void LED2() {         // function to flash the dome lights when a sound is being played
-
-  if (soundbutton != 0) {
-    if (currentMillis - previousMillis8 >= ledinterval1) {
-      previousMillis8 = currentMillis;
-      if (ledState1 == LOW) {
-        ledState1 = HIGH;
-        ledinterval1 = random(ledonmin, ledonmax);       //set a random time dealy when the sound is being played
-        pwm2.setPWM(1, 4096, 0);
-      }
-      else {
-        ledState1 = LOW;
-        ledinterval1 = random(ledoffmin, ledoffmax);       //set a random time dealy when the sound is being played
-        pwm2.setPWM(1, 0, 4096);
-      }
-
-    }
-    else {
-      pwm2.setPWM(1, 4096, 0);
-    }
-  }
-}
-
-void LED3() {         // function to flash the dome lights when a sound is being played
-
-  if (soundbutton != 0) {
-    if (currentMillis - previousMillis9 >= ledinterval2) {
-      previousMillis9 = currentMillis;
-      if (ledState2 == LOW) {
-        ledState2 = HIGH;
-        ledinterval2 = random(ledonmin, ledonmax);       //set a random time dealy when the sound is being played
-        pwm2.setPWM(2, 4096, 0);
-      }
-      else {
-        ledState2 = LOW;
-        ledinterval2 = random(ledoffmin, ledoffmax);       //set a random time dealy when the sound is being played
-        pwm2.setPWM(2, 0, 4096);
-      }
-
-    }
-    else {
-      pwm2.setPWM(2, 4096, 0);
-    }
-  }
-}
-
-void LED4() {         // function to flash the dome lights when a sound is being played
-
-  if (soundbutton != 0) {
-    if (currentMillis - previousMillis10 >= ledinterval3) {
-      previousMillis10 = currentMillis;
-      if (ledState3 == LOW) {
-        ledState3 = HIGH;
-        ledinterval3 = random(ledonmin, ledonmax);       //set a random time dealy when the sound is being played
-        pwm2.setPWM(3, 4096, 0);
-      }
-      else {
-        ledState3 = LOW;
-        ledinterval3 = random(ledoffmin, ledoffmax);       //set a random time dealy when the sound is being played
-        pwm2.setPWM(3, 0, 4096);
-      }
-
-    }
-    else {
-      pwm2.setPWM(3, 4096, 0);
-    }
-  }
-}
-
-void LED5() {         // function to flash the dome lights when a sound is being played
-
-  if (soundbutton != 0) {
-    if (currentMillis - previousMillis11 >= ledinterval4) {
-      previousMillis11 = currentMillis;
-      if (ledState4 == LOW) {
-        ledState4 = HIGH;
-        ledinterval4 = random(ledonmin, ledonmax);       //set a random time dealy when the sound is being played
-        pwm2.setPWM(7, 4096, 0);
-      }
-      else {
-        ledState4 = LOW;
-        ledinterval4 = random(ledoffmin, ledoffmax);       //set a random time dealy when the sound is being played
-        pwm2.setPWM(7, 0, 4096);
-      }
-
-    }
-    else {
-      pwm2.setPWM(7, 4096, 0);
-    }
-  }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////
-
-void holoServo1() {
-  //Holo Servo1/////////////////////////////
-  randomtime1 = random(500, 2000); //servo 1 random time position generation in milliseconds
-  if (currentMillis - previousMillis1 >= randomtime1) {
-    previousMillis1 = currentMillis;
-    pos1 = random(150, 600);
-    pwm2.setPWM(4, 0, pos1);
-  }
-  else {
-    pwm2.setPWM(4, 0, holoCentreVal);
-  }
-}
-
-void holoServo2() {
-  //Holo Servo2//////////////////////////////
-  randomtime2 = random(500, 2000); //servo 2 random time position generation in milliseconds
-  if (currentMillis - previousMillis2 >= randomtime2) {
-    previousMillis2 = currentMillis;
-    pos2 = random(150, 600);
-    pwm2.setPWM(5, 0, pos2);
-  }
-  else {
-    pwm2.setPWM(5, 0, holoCentreVal);
-  }
-}
-
-void holoServo3() {
-  //Holo Servo3//////////////////////////////
-  randomtime3 = random(500, 2000); //servo 3 random time position generation in milliseconds
-  if (currentMillis - previousMillis3 >= randomtime3) {
-    previousMillis3 = currentMillis;
-    pos3 = random(150, 600);
-    pwm2.setPWM(6, 0, pos3);
-  }
-  else {
-    pwm2.setPWM(6, 0, holoCentreVal);
-  }
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////
-
-void holoLED1() {
-  //Holo LED 1
-  if (currentMillis - previousMillis4 >= hololedinterval1) {
-    previousMillis4 = currentMillis;
-    if (hololedState1 == LOW) {
-      hololedState1 = HIGH;
-      hololedinterval1 = random(hololedonmin, hololedonmax);       //set a random time dealy
-      pwm2.setPWM(13, 0, 4096);
-    }
-    else {
-      hololedState1 = LOW;
-      hololedinterval1 = random(hololedoffmin, hololedoffmax);       //set a random time dealy
-      pwm2.setPWM(13, 4096, 0);
-    }
-  }
-}
-
-void holoLED2() {
-
-  //Holo LED 2
-  if (currentMillis - previousMillis5 >= hololedinterval2) {
-    previousMillis5 = currentMillis;
-    if (hololedState2 == LOW) {
-      hololedState2 = HIGH;
-      hololedinterval2 = random(hololedonmin, hololedonmax);       //set a random time dealy
-      pwm2.setPWM(14, 0, 4096);
-    }
-    else {
-      hololedState2 = LOW;
-      hololedinterval2 = random(hololedoffmin, hololedoffmax);       //set a random time dealy
-      pwm2.setPWM(14, 4096, 0);
-    }
-  }
-}
-
-void holoLED3() {
-
-  //Holo LED 3
-  if (currentMillis - previousMillis6 >= hololedinterval3) {
-    previousMillis6 = currentMillis;
-    if (hololedState3 == LOW) {
-      hololedState3 = HIGH;
-      hololedinterval3 = random(hololedonmin, hololedonmax);       //set a random time dealy
-      pwm2.setPWM(15, 0, 4096);
-    }
-    else {
-      hololedState3 = LOW;
-      hololedinterval3 = random(hololedoffmin, hololedoffmax);       //set a random time dealy
-      pwm2.setPWM(15, 4096, 0);
-    }
-  }
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////
-// (pin, 4096, 0) turns pin fully on, (pin, 0, 4096) turns pin fully off
-// Body PCA9685 module, front arms, tilt servo and centre lift servo
-
-void servoSetup() {
-  pwm1.setPWM(0, 0, frontarm1min); //front arm 1
-  pwm1.setPWM(1, 0, frontarm2min); //front arm 2
-  pwm1.setPWM(2, 0, 0); //
-  pwm1.setPWM(3, 0, liftup); //centre leg lift
-  pwm1.setPWM(4, 0, tiltmin);// Body Tilt
-  pwm1.setPWM(5, 0, 0);
-  pwm1.setPWM(6, 0, 0); //
-  pwm1.setPWM(7, 0, 0); //
-  pwm1.setPWM(8, 0, 0); //
-  pwm1.setPWM(9, 0, 0); //
-  pwm1.setPWM(10, 0, 0); //
-  pwm1.setPWM(11, 0, 0); //
-  pwm1.setPWM(12, 0, 0); //
-  pwm1.setPWM(13, 0, 0); //
-  pwm1.setPWM(14, 0, 0); //
-  pwm1.setPWM(15, 0, 300);  //dome rotation centred for servo motor
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-
-// Dome PCA9685 module, lights and Holo proector servos, board will require the A0 tab to be bridged with solder
-// Pulse ranges for the servo positions to the PCA9685 board 0-180 to 150-600
-
-void servoSetup2() {
-  pwm2.setPWM(0, 4096, 0); //Dome lights
-  pwm2.setPWM(1, 4096, 0); //Dome lights
-  pwm2.setPWM(2, 4096, 0); //Dome lights
-  pwm2.setPWM(3, 4096, 0); //Dome lights
-  pwm2.setPWM(4, 0, holoCentreVal); // Holo Servo 1
-  pwm2.setPWM(5, 0, holoCentreVal); // Holo Servo 2
-  pwm2.setPWM(6, 0, holoCentreVal); // Holo Servo 3
-  pwm2.setPWM(7, 4096, 0); // Dome lights
-  pwm2.setPWM(8, 0, 0); //
-  pwm2.setPWM(9, 0, 0); //
-  pwm2.setPWM(10, 0, peridown); //Periscope
-  pwm2.setPWM(11, 4096, 0); //Periscope LED
-  pwm2.setPWM(12, 0, 0); //
-  pwm2.setPWM(13, 4096, 0); // holo light 1
-  pwm2.setPWM(14, 4096, 0); // holo light 2
-  pwm2.setPWM(15, 4096, 0); // holo light 3
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////
-void text() { // uncomment lines for debugging
-  //Serial.print("elapsedtime:"); Serial.print(elapsedTime); Serial.print("\t");
-  Serial.print("out1:"); Serial.print(rawLeft); Serial.print("\t");
-  Serial.print("out2:"); Serial.print(rawRight); Serial.print("\t");
-  Serial.print("out3:"); Serial.print(output3); Serial.print("\t");
-  Serial.print("out4:"); Serial.print(output4); Serial.print("\t");
-  Serial.print("lift:"); Serial.print(lift); Serial.print("\t");
-  Serial.print("tilt:"); Serial.print(tilt); Serial.print("\t");
-  Serial.print("periscope:"); Serial.print(periscope); Serial.print("\t");
-  Serial.print("sound:"); Serial.print(soundbutton); Serial.println("\t");
-}
+} // end of loop()

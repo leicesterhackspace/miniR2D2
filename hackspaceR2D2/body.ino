@@ -19,7 +19,8 @@ void motordrivers(int forward, int left) {     // for the main drive wheels
 
   rawLeft = constrain(rawLeft, -pwmResolution, pwmResolution) ; // constrain the PWM to max pwmResolution
   rawRight = constrain(rawRight, -pwmResolution, pwmResolution) ;
-  //Serial.println(rawLeft);
+  Serial.print("rawleft ");
+  Serial.println(rawLeft);
   if (rawLeft > 0){
     motorA.motorGo(rawLeft );
     //Serial.printf("rawleft %d   \n", rawLeft);
@@ -32,7 +33,9 @@ void motordrivers(int forward, int left) {     // for the main drive wheels
     motorA.motorStop();
     //Serial.println("rawleft stop ");
   }
-
+Serial.print("rawright ");
+Serial.println(rawRight);
+ 
   if (rawRight > 0){
     motorB.motorGo(rawRight);
     //Serial.printf("          rawright %d \n",  rawRight);
@@ -55,7 +58,8 @@ void dome(int speed) {
   //////////////////////////read in the values from bluetooth///////////////////
   output1 = constrain(speed, -joystickMax, joystickMax);
   output1 = map(output1, -joystickMax, joystickMax, -pwmResolution, pwmResolution);
-  if (output1 < 0)output1 = 0;  // looks like dome spins one way only change if wrong direction
+  // if (output1 < 0)output1 = 0;  // looks like dome spins one way only change if wrong direction commented out ooo-xxx
+  // Serial.println(output1);
   motorC.motorGo(output1);
 
 

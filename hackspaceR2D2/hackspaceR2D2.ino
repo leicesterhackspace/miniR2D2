@@ -2,6 +2,14 @@
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 #include <ESP32MX1508.h>
+
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include <Update.h>
+WebServer server(80);
+
 // called this way, it uses the default address 0x40
 
 Adafruit_PWMServoDriver pwm1 = Adafruit_PWMServoDriver(0x40);
@@ -20,19 +28,19 @@ Adafruit_PWMServoDriver pwm2 = Adafruit_PWMServoDriver(0x41);
 #define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
 
 // motor definitions for body
-#define IN1 19 //Left Motor Driver IN1 5
-#define IN2 18 //Left Motor Driver IN2 3
-#define IN3 16 //Right Motor Driver IN1 6
-#define IN4 17 //Right Motor Driver IN2 9
-#define IN5 12 //Dome Motor Driver IN1    //uncomment if using dc motor for dome
-#define IN6 13 //Dome Motor Driver IN2    //uncomment if using dc motor for dome
+#define IN1 26 //25 //27 //19 //12 //Left Motor Driver IN1 5
+#define IN2 18 //21 //22 //18 //17 //Left Motor Driver IN2 3
+#define IN3 33 //32 //25 //Right Motor Driver IN1 6
+#define IN4 19 //12 //16 //21 //Right Motor Driver IN2 9
+#define IN5 23 //27 //32 //25 //Dome Motor Driver IN1    //uncomment if using dc motor for dome
+#define IN6 14 //22 //16 //22 //Dome Motor Driver IN2    //uncomment if using dc motor for dome
 #define PWM_ch0 0
 #define PWM_ch1 1
 #define PWM_ch2 2
 #define PWM_ch3 3
 #define PWM_ch4 4
 #define PWM_ch5 5
-
+//Wire.begin(4, 17); // Default SDA=21, SCL=22
 //Define the motor driver details on the MX1508
 #define RES 12  // 4095 rewsolution
 int pwmResolution =pow(2, RES) - 1;
@@ -43,9 +51,9 @@ MX1508 motorC(IN5, IN6, PWM_ch4, PWM_ch5, RES);
 #define joystickMax 350
 
 // numchukdefinitions
-#define numchukC 1
-#define numchukZ 2
-#define trigger 8
+#define numchukC 4
+#define numchukZ 8
+#define trigger 1
 
 GamepadPtr myGamepads[BP32_MAX_GAMEPADS];
 bool Connected = false;
@@ -240,6 +248,7 @@ void setup() {
    * affects the calculations for the PWM update frequency. 
    * Failure to correctly set the int.osc value will cause unexpected PWM results
    */
+   Wire.begin(21, 22); // Default SDA=21, SCL=22
   pwm1.begin();
   pwm1.setPWMFreq(50);  // Analog servos run at ~50 Hz updates  
   pwm2.begin();
@@ -266,7 +275,7 @@ void setup() {
   servoSetup(); // view function and end of code  
   servoSetup2(); // view function and end of code  
 
- 
+ setupOTA();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -331,16 +340,16 @@ void loop() {
       }; // end of dpad changed
      // motor control
      buttonPressed = myGamepad->buttons() ;
-    
-     switch( buttonPressed & 0xb){
+    Serial.println(buttonPressed);
+     switch( buttonPressed & 0xd){ //& 0xb but calculated it shoudl be & 0xd ooo-xxx
       case numchukZ:
-         dome(myGamepad->axisX());
+         dome(myGamepad->axisRX());  // was X
          motorA.motorStop();
          motorB.motorStop();
          break;
 
       case numchukC:
-        frontArm(myGamepad->axisY());
+        frontArm(myGamepad->axisRY());
         motorA.motorStop();
         motorB.motorStop();
         motorC.motorStop();
@@ -353,7 +362,8 @@ void loop() {
         }
         break;
       default:
-        motordrivers(myGamepad->axisX(), myGamepad->axisY());
+      Serial.print(myGamepad->axisRX());Serial.print(" ");Serial.println( myGamepad->axisRY());
+        motordrivers(myGamepad->axisRX(), myGamepad->axisRY());
         motorC.motorStop();
         break;
      }
@@ -389,5 +399,6 @@ void loop() {
 
   //vTaskDelay(1);
   delay(10);
+   server.handleClient();
   
 } // end of loop()

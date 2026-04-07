@@ -163,9 +163,10 @@ void holoServo1() {
     pos1 = random(150, 600);
     pwm2.setPWM(4, 0, pos1);
   }
-  else {
-    pwm2.setPWM(4, 0, holoCentreVal);
-  }
+  //commented out else part on all threee holoservos ooo-xxx
+ // else {
+ //   pwm2.setPWM(4, 0, holoCentreVal);
+ // }
 }
 
 void holoServo2() {
@@ -176,9 +177,9 @@ void holoServo2() {
     pos2 = random(150, 600);
     pwm2.setPWM(5, 0, pos2);
   }
-  else {
-    pwm2.setPWM(5, 0, holoCentreVal);
-  }
+  // else {
+  //  pwm2.setPWM(5, 0, holoCentreVal);
+  // }
 }
 
 void holoServo3() {
@@ -189,9 +190,9 @@ void holoServo3() {
     pos3 = random(150, 600);
     pwm2.setPWM(6, 0, pos3);
   }
-  else {
-    pwm2.setPWM(6, 0, holoCentreVal);
-  }
+ // else {
+ //   pwm2.setPWM(6, 0, holoCentreVal);
+ // }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

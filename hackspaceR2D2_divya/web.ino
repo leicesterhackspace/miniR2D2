@@ -12,37 +12,62 @@ const char* controlPage =
 "<html><head>"
 "<meta name='viewport' content='width=device-width, initial-scale=1'>"
 "<script src='https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js'></script>"
-"<style>body{font-family:Arial;text-align:center;} .slider{width:300px;}</style>"
+"<style>"
+"body{font-family:Arial;text-align:center;}"
+".slider{width:300px;}"
+"select, button{font-size:16px; margin:6px;}"
+"#status{margin-top:10px; color:green;}"
+"</style>"
 "</head><body>"
 "<h2>mini R2D2 Control Panel</h2>"
-"<button onclick=\"location.href='/ota'\">OTA Update</button>"
-"<p>Min: <span id='minVal'>500</span></p>"
-"<input type='range' min='500' max='2500' value='500' class='slider' id='minSlider' oninput='minVal.innerHTML=this.value'>"
 
-"<p>Max: <span id='maxVal'>2500</span></p>"
-"<input type='range' min='500' max='2500' value='2500' class='slider' id='maxSlider' oninput='maxVal.innerHTML=this.value'>"
+"<button onclick=\"location.href='/ota'\">OTA Update</button><br><br>"
 
-"<p>Position: <span id='posVal'>0</span></p>"
-"<input type='range' min='0' max='180' value='90' class='slider' id='posSlider' oninput='posVal.innerHTML=this.value'>"
+"<p>Select Servo:</p>"
+"<select id='servoSelect'>"
+"  <option value=0>Front Arm 1</option>"
+"  <option value=1>Front Arm 2</option>"
+"  <option value=2>Lift Leg</option>"
+"  <option value=3>Body Tilt</option>"
+"  <option value=4>Holo Servo</option>"
+"  <option value=5>Periscope</option>"
+
+
+"</select>"
+
+"<p>Min: <span id='minVal'>300</span></p>"
+"<input type='range' min='0' max='600' value='300' class='slider' id='minSlider' oninput='minVal.innerHTML=this.value'>"
+
+"<p>Max: <span id='maxVal'>600</span></p>"
+"<input type='range' min='0' max='600' value='600' class='slider' id='maxSlider' oninput='maxVal.innerHTML=this.value'>"
+
+"<p>Position: <span id='posVal'>300</span></p>"
+"<input type='range' min='0' max='600' value='300' class='slider' id='posSlider' oninput='posVal.innerHTML=this.value'>"
 
 "<br><br>"
 "<button onclick='applyLimits()'>Apply limits</button>"
 "<button onclick='moveServo()'>Move servo</button>"
 
+"<div id='status'></div>"
+
 "<script>"
 "function applyLimits(){"
+"  let servo = document.getElementById('servoSelect').value;"
 "  let mn = document.getElementById('minSlider').value;"
 "  let mx = document.getElementById('maxSlider').value;"
-"  $.get('/setlimits?min=' + mn + '&max=' + mx);"
+"  $.get('/setlimits?servo=' + servo + '&min=' + mn + '&max=' + mx, function الرد(resp){"
+"    $('#status').html(resp);"
+"  });"
 "}"
 "function moveServo(){"
+"  let servo = document.getElementById('servoSelect').value;"
 "  let p = document.getElementById('posSlider').value;"
-"  $.get('/setpos?pos=' + p);"
+"  $.get('/setpos?servo=' + servo + '&pos=' + p, function(resp){"
+"    $('#status').html(resp);"
+"  });"
 "}"
 "</script>"
 "</body></html>";
-
-
 /*
  * setup function
  */
@@ -79,6 +104,36 @@ void setupOTA(void) {
     int t = servoMin;
     servoMin = servoMax;
     servoMax = t;
+  }
+  if (server.hasArg("servo")){
+    switch (server.hasArg("servo")){
+      case  0 :
+        frontarm1min = servoMin;
+        frontarm1max = servoMax;
+        break;
+      case  1 :
+        frontarm2min = servoMin;
+        frontarm2max = servoMax;
+        break;
+      case  2 :
+        liftdown = servoMin;
+        liftup = servoMax;
+        break;
+      case  3 :
+        tiltmin = servoMin;
+        tiltmax = servoMax;
+        break;
+      case 4:
+        holoCentreVal = servoMax;
+        break;
+       case  3 :
+        periup = servoMin;
+        peridown = servoMax;
+        break; 
+      default:
+
+        break;
+    }
   }
   Serial.print(" min");
   Serial.print(servoMin);
